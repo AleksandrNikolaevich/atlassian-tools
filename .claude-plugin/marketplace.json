@@ -1,0 +1,14 @@
+{
+  "name": "atlassian-tools",
+  "owner": {
+    "name": "aleksandr",
+    "email": "aleksandr.chernov.ca@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "atlassian-tools",
+      "source": "./",
+      "description": "Скиллы для работы с локальной копией Confluence и Jira и для правки страниц вики и описаний задач"
+    }
+  ]
+}

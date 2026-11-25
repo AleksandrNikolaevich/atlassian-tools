@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atlassian-tools"
+version = "0.1.0"
+description = "Локальная копия Confluence и Jira в markdown и правка страниц и задач в их родном формате"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["beautifulsoup4>=4.12", "lxml>=5"]
+
+[project.urls]
+Repository = "https://github.com/AleksandrNikolaevich/atlassian-tools"
+
+[project.scripts]
+wiki-sync = "atlassian_tools.wiki_sync:main"
+wiki-edit = "atlassian_tools.wiki_edit:main"
+jira-sync = "atlassian_tools.jira_sync:main"
+jira-edit = "atlassian_tools.jira_edit:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

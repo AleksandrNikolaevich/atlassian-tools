@@ -1,0 +1,9 @@
+{
+  "name": "atlassian-tools",
+  "version": "0.1.0",
+  "description": "Скиллы для работы с локальной копией Confluence и Jira и для правки страниц вики и описаний задач через команды wiki-sync, wiki-edit, jira-sync, jira-edit",
+  "author": {
+    "name": "aleksandr",
+    "email": "aleksandr.chernov.ca@gmail.com"
+  }
+}
