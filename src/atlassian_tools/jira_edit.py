@@ -52,7 +52,7 @@ def normalize(text):
 
 
 def issue_key(arg):
-    """Аргумент команды (ключ, ссылка на задачу или путь к _jira/issues/<KEY>.md) -> ключ задачи."""
+    """Аргумент (ключ, ссылка на задачу или путь к _jira/issues/<KEY>/<KEY>.md) -> ключ задачи."""
     m = re.search(r"([A-Z][A-Z0-9_]+-\d+)", os.path.basename(arg.rstrip("/")).upper())
     if not m:
         raise JiraError(f"не похоже на ключ задачи Jira: {arg} (ожидается, например, PROJ-1234)")

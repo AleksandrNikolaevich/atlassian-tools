@@ -12,8 +12,8 @@
 
     _jira/README.md                 список релизов — начинать отсюда
     _jira/releases/<релиз>.md       задачи релиза
-    _jira/issues/<KEY>.md           задача: поля, описание, подзадачи, связи, вложения, комментарии
-    _jira/attachments/<KEY>/…       вложения задач
+    _jira/issues/<KEY>/<KEY>.md     задача: поля, описание, подзадачи, связи, вложения, комментарии
+    _jira/issues/<KEY>/attachments/… вложения задачи
 
 Доступ к Jira — один из трёх способов (переменные окружения или .env проекта):
   JIRA_USER + JIRA_PASSWORD  логин и пароль;
@@ -29,6 +29,7 @@ import datetime
 import html
 import json
 import os
+import posixpath
 import re
 import sys
 import urllib.parse
@@ -243,6 +244,10 @@ def write(path, text):
         f.write(text.rstrip("\n") + "\n")
 
 
+def issue_path(key):
+    return f"issues/{key}/{key}.md"
+
+
 def safe_name(name):
     name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", name).strip(" .-")
     return name[:120] or "файл"
@@ -284,18 +289,19 @@ class Mirror:
         self.known = set()                            # ключи задач, у которых есть файл в копии
         issues_dir = os.path.join(OUT, "issues")
         if os.path.isdir(issues_dir):
-            self.known = {n[:-3] for n in os.listdir(issues_dir) if n.endswith(".md")}
+            self.known = {key for key in os.listdir(issues_dir) if os.path.isfile(os.path.join(OUT, issue_path(key)))}
 
-    def issue_link(self, key, from_dir="issues"):
+    def issue_link(self, key, from_dir):
         if key in self.known:
-            return f"{key}.md" if from_dir == "issues" else f"../issues/{key}.md"
+            return posixpath.relpath(issue_path(key), from_dir)
         return f"{self.jira.base}/browse/{key}"
 
     # ── задача ──
 
     def render_issue(self, issue, attachments):
         key, f, rf = issue["key"], issue["fields"], issue.get("renderedFields") or {}
-        local = {}  # id вложения -> путь от папки issues/
+        issue_dir = posixpath.dirname(issue_path(key))
+        local = {}  # id вложения -> путь от папки задачи
         names = {str(a["id"]): a["filename"] for a in attachments}
         for a in attachments:
             if a.get("local"):
@@ -308,7 +314,7 @@ class Mirror:
                 return dest(local[m.group(1)])
             m = re.search(r"/browse/([A-Z][A-Z0-9_]+-\d+)(?:[?#]|$)", href)
             if m and m.group(1) in self.known:
-                return self.issue_link(m.group(1))
+                return self.issue_link(m.group(1), issue_dir)
             return dest(urllib.parse.urljoin(self.jira.base + "/", href))
 
         def alt(src):
@@ -317,12 +323,12 @@ class Mirror:
 
         md = Markdown(link, alt)
         lines = [f"# {key}. {f.get('summary', '')}", "",
-                 "[Все релизы](../README.md)" + "".join(
-                     f" · [{v['name']}]({dest('../releases/' + self.slugs[v['id']] + '.md')})"
+                 "[Все релизы](../../README.md)" + "".join(
+                     f" · [{v['name']}]({dest('../../releases/' + self.slugs[v['id']] + '.md')})"
                      for v in f.get("fixVersions") or [] if v["id"] in self.slugs), ""]
 
         def versions(items):
-            return ", ".join(f"[{v['name']}]({dest('../releases/' + self.slugs[v['id']] + '.md')})"
+            return ", ".join(f"[{v['name']}]({dest('../../releases/' + self.slugs[v['id']] + '.md')})"
                              if v["id"] in self.slugs else v["name"] for v in items or [])
 
         parent = f.get("parent")
@@ -339,7 +345,7 @@ class Mirror:
             ("Затронутые версии", versions(f.get("versions"))),
             ("Компоненты", ", ".join(c["name"] for c in f.get("components") or [])),
             ("Метки", ", ".join(f.get("labels") or [])),
-            ("Родительская задача", parent and f"[{parent['key']}]({self.issue_link(parent['key'])}) "
+            ("Родительская задача", parent and f"[{parent['key']}]({self.issue_link(parent['key'], issue_dir)}) "
                                                f"{parent['fields'].get('summary', '')}"),
             ("Jira", f"{self.jira.base}/browse/{key}"),
         ]
@@ -350,7 +356,7 @@ class Mirror:
         subtasks = f.get("subtasks") or []
         if subtasks:
             lines += ["", "## Подзадачи", "", "| Задача | Название | Статус |", "|---|---|---|"]
-            lines += [f"| [{s['key']}]({self.issue_link(s['key'])}) | {cell(s['fields'].get('summary'))} | "
+            lines += [f"| [{s['key']}]({self.issue_link(s['key'], issue_dir)}) | {cell(s['fields'].get('summary'))} | "
                       f"{cell(name_of(s['fields'].get('status')))} |" for s in subtasks]
 
         links = []
@@ -359,7 +365,7 @@ class Mirror:
             if not other:
                 continue
             kind = li["type"]["outward" if "outwardIssue" in li else "inward"]
-            links.append(f"- {kind}: [{other['key']}]({self.issue_link(other['key'])}) "
+            links.append(f"- {kind}: [{other['key']}]({self.issue_link(other['key'], issue_dir)}) "
                          f"{other['fields'].get('summary', '')} — {name_of(other['fields'].get('status'))}")
         if links:
             lines += ["", "## Связи", ""] + links
@@ -394,19 +400,19 @@ class Mirror:
             issue["_comments"] = [dict(c, renderedBody=bodies.get(str(c.get("id")))) for c in comments]
 
         attachments = f.get("attachment") or []
-        folder = os.path.join(OUT, "attachments", key)
+        folder = os.path.join(OUT, posixpath.dirname(issue_path(key)), "attachments")
+        os.makedirs(folder, exist_ok=True)
         for a in attachments:
             name = f"{a['id']}-{safe_name(a['filename'])}"
             path = os.path.join(folder, name)
             if not os.path.exists(path) and with_attachments and a.get("size", 0) <= self.max_bytes:
-                os.makedirs(folder, exist_ok=True)
                 try:
                     self.jira.download(a["content"], path)
                 except JiraError as e:
                     print(f"  {key}: {e}", file=sys.stderr)
             if os.path.exists(path):
-                a["local"] = f"../attachments/{key}/{name}"
-        write(os.path.join(OUT, "issues", f"{key}.md"), self.render_issue(issue, attachments))
+                a["local"] = f"attachments/{name}"
+        write(os.path.join(OUT, issue_path(key)), self.render_issue(issue, attachments))
 
     # ── релизы ──
 
@@ -468,7 +474,8 @@ class Mirror:
                       for v in items]
         if extra:
             lines += ["", "## Задачи вне выгруженных релизов", ""]
-            lines += [f"- [{k}](issues/{k}.md) {s}" for k, s in sorted(extra.items(), key=lambda x: issue_order(x[0]))]
+            lines += [f"- [{k}]({self.issue_link(k, '.')}) {s}"
+                      for k, s in sorted(extra.items(), key=lambda x: issue_order(x[0]))]
         return "\n".join(lines)
 
 
@@ -573,10 +580,10 @@ def cmd_pull(jira, args):
         for i in jira.search(f"key in ({','.join(sorted(related))})", LIST_FIELDS):
             listing[i["key"]] = i
 
-    mirror.known |= set(listing)
+    mirror.known.update(listing)
     changed = [k for k, i in listing.items()
                if args.force or seen.get(k, {}).get("updated") != i["fields"].get("updated")
-               or not os.path.exists(os.path.join(OUT, "issues", f"{k}.md"))]
+               or not os.path.isfile(os.path.join(OUT, issue_path(k)))]
     changed.sort(key=issue_order)
     print(f"Задач: {len(listing)}, изменились или новые: {len(changed)}")
     for start in range(0, len(changed), BATCH):
